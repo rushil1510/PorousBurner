@@ -5,31 +5,17 @@ Find optimal SiC3 porosity, SiC10 porosity, and preheating length.
 """
 import os
 import numpy as np
-import pandas as pd
-from scipy.optimize import curve_fit
 import cantera as ct
 from deap import base, creator, tools, algorithms
 import random
 import PorousMediaBurner as pmb
 
-# NOx model: NOx = C1 * exp(C2 * T)
-def nox_model(T, C1, C2):
-    return C1 * np.exp(C2 * T)
-
-# Fit NOx coefficients from dataset
-def fit_nox_coefficients(csv_file):
-    data = pd.read_csv(csv_file)
-    T = data['T'].values
-    nox = data['NOx'].values
-    popt, _ = curve_fit(nox_model, T, nox, p0=(1e-6, 1e-3))
-    return popt  # C1, C2
-
 # Compute heating value [J/kg]
 def compute_heating_value(outlet, inlet_h):
     return outlet.enthalpy_mass - inlet_h
 
-# Simulation wrapper: returns heating value and NOx emission for given parameters
-def simulate(params, C1, C2):
+# Simulation wrapper: returns heating value and NOx mass fraction (NO + NO2)
+def simulate(params):
     sic3_porosity, sic10_porosity, preheat_length = params
     # override porosity
     pmb.SiC3PPI.porosity = sic3_porosity
@@ -88,20 +74,22 @@ def simulate(params, C1, C2):
     outlet = reactors[-1].thermo
     heating = compute_heating_value(outlet, pmb.h_in_inlet)
     T_out = outlet.T
-    nox = C1 * np.exp(C2 * T_out)
+    # compute NOx mass fraction from outlet species
+    Y = outlet.Y
+    idx_NO = outlet.species_index('NO')
+    idx_NO2 = outlet.species_index('NO2')
+    nox = Y[idx_NO] + Y[idx_NO2]
     return heating, nox
 
-# Fitness: maximize heating, minimize NOx
-def fitness_function(individual, C1, C2):
-    heating, nox = simulate(individual, C1, C2)
+# Fitness: maximize heating, minimize NOx mass fraction
+def fitness_function(individual):
+    heating, nox = simulate(individual)
     # penalize NOx, weight factor
     score = heating - 1e5 * nox
     return (score,)
 
 def main():
-    # fit NOx model
-    csv_file = os.path.join(os.path.dirname(__file__), 'nox_data.csv')
-    C1, C2 = fit_nox_coefficients(csv_file)
+    # run GA without external NOx dataset
     # GA setup
     creator.create('FitnessMax', base.Fitness, weights=(1.0,))
     creator.create('Individual', list, fitness=creator.FitnessMax)
@@ -114,7 +102,7 @@ def main():
     toolbox.register('individual', tools.initCycle, creator.Individual,
                      (toolbox.attr_sic3, toolbox.attr_sic10, toolbox.attr_preheat), n=1)
     toolbox.register('population', tools.initRepeat, list, toolbox.individual)
-    toolbox.register('evaluate', fitness_function, C1=C1, C2=C2)
+    toolbox.register('evaluate', fitness_function)
     toolbox.register('mate', tools.cxBlend, alpha=0.5)
     toolbox.register('mutate', tools.mutGaussian, mu=0, sigma=0.05, indpb=0.1)
     toolbox.register('select', tools.selTournament, tournsize=3)
@@ -126,7 +114,7 @@ def main():
     hof = tools.HallOfFame(1)
     algorithms.eaSimple(pop, toolbox, cxpb, mutpb, ngen, halloffame=hof, verbose=True)
     best = hof[0]
-    best_heating, best_nox = simulate(best, C1, C2)
+    best_heating, best_nox = simulate(best)
     print('Best parameters: SiC3 porosity={:.4f}, SiC10 porosity={:.4f}, Preheat length={:.4f} m'.format(*best))
     print('Heating value: {:.2f} J/kg, NOx emission: {:.3e}'.format(best_heating, best_nox))
     # compute and print fitness score

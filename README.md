@@ -14,8 +14,7 @@ This project uses a genetic algorithm to optimize the operating parameters of a 
   - Preheating length
   The fitness function maximizes heating value and minimizes NOx emissions based on a fitted NOx model.
 
-- **nox_data.csv**
-  CSV dataset containing measured NOx emissions vs temperature (T in K, NOx in appropriate units) used to fit coefficients of the NOx model.
+<!-- no external NOx dataset is required, NO and NO2 are read directly from the simulation -->
 
 - **run.sh**
   Bash script to execute the optimizer and append the best parameters and fitness score to `log.txt`.
@@ -27,12 +26,12 @@ This project uses a genetic algorithm to optimize the operating parameters of a 
 
 Install required Python packages:
 ```bash
-pip install numpy pandas scipy cantera deap matplotlib
+pip install numpy cantera deap matplotlib
 ```
 
 ## Usage
 
-1. Prepare your NOx dataset as `nox_data.csv` in this directory.
+1. Make sure Cantera mechanism file (e.g. gri30.yaml) is accessible.
 2. Run the optimizer:
    ```bash
    ./run.sh
