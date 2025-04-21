@@ -1,1 +1,2 @@
 2025-04-19 19:16:27 |  | 
+2025-04-20 00:44:29 | Best parameters: SiC3 porosity=0.9048, SiC10 porosity=0.6012, Preheat length=0.0489 m | Fitness score: 0.000

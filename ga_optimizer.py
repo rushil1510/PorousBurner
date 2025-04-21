@@ -9,6 +9,7 @@ import cantera as ct
 from deap import base, creator, tools, algorithms
 import random
 import PorousMediaBurner as pmb
+import matplotlib.pyplot as plt
 
 # Compute heating value [J/kg]
 def compute_heating_value(outlet, inlet_h):
@@ -107,12 +108,17 @@ def main():
     toolbox.register('mutate', tools.mutGaussian, mu=0, sigma=0.05, indpb=0.1)
     toolbox.register('select', tools.selTournament, tournsize=3)
 
+    # Initialize population and GA parameters
     pop = toolbox.population(n=50)
     ngen = 40
     cxpb, mutpb = 0.5, 0.2
-    # run GA
+
+    # Setup statistics to extract fitness values
     hof = tools.HallOfFame(1)
-    algorithms.eaSimple(pop, toolbox, cxpb, mutpb, ngen, halloffame=hof, verbose=True)
+    stats = tools.Statistics(lambda ind: ind.fitness.values[0])
+    stats.register("all", lambda vals: list(vals))
+    stats.register("max", max)
+    pop, logbook = algorithms.eaSimple(pop, toolbox, cxpb, mutpb, ngen, stats=stats, halloffame=hof, verbose=True)
     best = hof[0]
     best_heating, best_nox = simulate(best)
     print('Best parameters: SiC3 porosity={:.4f}, SiC10 porosity={:.4f}, Preheat length={:.4f} m'.format(*best))
@@ -120,6 +126,29 @@ def main():
     # compute and print fitness score
     fitness_score = best_heating - 1e5 * best_nox
     print(f'Fitness score: {fitness_score:.3f}')
+
+    # Plot max fitness over generations
+    max_fitness = logbook.select("max")
+    plt.figure()
+    plt.plot(max_fitness, marker='o')
+    plt.xlabel("Generation")
+    plt.ylabel("Max Fitness")
+    plt.title("Max Fitness per Generation")
+    plt.grid(True)
+    plt.savefig("fitness_plot.png")
+    print("Saved fitness plot to fitness_plot.png")
+
+    # Plot all fitness values per generation
+    all_fitness = logbook.select("all")
+    plt.figure()
+    for gen_idx, fits in enumerate(all_fitness):
+        plt.scatter([gen_idx] * len(fits), fits, s=10, alpha=0.6)
+    plt.xlabel("Generation")
+    plt.ylabel("Fitness Values")
+    plt.title("Fitness Distribution per Generation")
+    plt.grid(True)
+    plt.savefig("fitness_distribution.png")
+    print("Saved fitness distribution to fitness_distribution.png")
 
 if __name__ == '__main__':
     main()
