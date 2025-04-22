@@ -1,18 +1,40 @@
-#!/usr/bin/env python3
-"""
-Genetic Algorithm optimizer for PorousMediaBurner parameters.
-Find optimal SiC3 porosity, SiC10 porosity, and preheating length.
-"""
 import os
 import numpy as np
 import cantera as ct
 from deap import base, creator, tools, algorithms
 import random
 import PorousMediaBurner as pmb
+import csv
 
 # Compute heating value [J/kg]
 def compute_heating_value(outlet, inlet_h):
     return outlet.enthalpy_mass - inlet_h
+
+def calculate_nox(temperature, C1, C2):
+    """Calculates NOx concentration using the provided equation."""
+    return C1 * np.exp(C2 * temperature)
+
+def load_species_data(dataset_path, species_name):
+    """Loads species data from a CSV file."""
+    filepath = os.path.join(dataset_path, f"{species_name}.csv")
+    positions, temperatures, values = [], [], []
+    with open(filepath, 'r') as csvfile:
+        csv_reader = csv.DictReader(csvfile)
+        for row in csv_reader:
+            positions.append(float(row['position']))
+            temperatures.append(float(row['temperature']))
+            values.append(float(row['value']))
+    return np.array(positions), np.array(temperatures), np.array(values)
+
+def fit_nox_model(dataset_path, species_name):
+    """Fits the NOx model to the data and returns C1 and C2."""
+    positions, temperatures, nox_values = load_species_data(dataset_path, species_name)
+    # Linear regression of log(NOx) vs Temperature
+    log_nox = np.log(nox_values)
+    A = np.vstack([temperatures, np.ones(len(temperatures))]).T
+    C2, log_C1 = np.linalg.lstsq(A, log_nox, rcond=None)[0]
+    C1 = np.exp(log_C1)
+    return C1, C2
 
 # Simulation wrapper: returns heating value and NOx mass fraction (NO + NO2)
 def simulate(params):
@@ -74,11 +96,11 @@ def simulate(params):
     outlet = reactors[-1].thermo
     heating = compute_heating_value(outlet, pmb.h_in_inlet)
     T_out = outlet.T
-    # compute NOx mass fraction from outlet species
-    Y = outlet.Y
-    idx_NO = outlet.species_index('NO')
-    idx_NO2 = outlet.species_index('NO2')
-    nox = Y[idx_NO] + Y[idx_NO2]
+
+    # Use the fitted NOx model
+    C1, C2 = fit_nox_model("datasets/SpeciesData", "NO")  # Example: Fit to NO data
+    nox = calculate_nox(T_out, C1, C2)
+
     return heating, nox
 
 # Fitness: maximize heating, minimize NOx mass fraction
