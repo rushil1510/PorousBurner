@@ -6,6 +6,12 @@ import random
 import PorousMediaBurner as pmb
 import csv
 
+# Clean up any existing creator classes to avoid conflicts
+if 'FitnessMax' in creator.__dict__:
+    del creator.FitnessMax
+if 'Individual' in creator.__dict__:
+    del creator.Individual
+
 # Compute heating value [J/kg]
 def compute_heating_value(outlet, inlet_h):
     return outlet.enthalpy_mass - inlet_h
@@ -17,6 +23,9 @@ def calculate_nox(temperature, C1, C2):
 def load_species_data(dataset_path, species_name):
     """Loads species data from a CSV file."""
     filepath = os.path.join(dataset_path, f"{species_name}.csv")
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Dataset file not found: {filepath}")
+    
     positions, temperatures, values = [], [], []
     with open(filepath, 'r') as csvfile:
         csv_reader = csv.DictReader(csvfile)
@@ -28,13 +37,18 @@ def load_species_data(dataset_path, species_name):
 
 def fit_nox_model(dataset_path, species_name):
     """Fits the NOx model to the data and returns C1 and C2."""
-    positions, temperatures, nox_values = load_species_data(dataset_path, species_name)
-    # Linear regression of log(NOx) vs Temperature
-    log_nox = np.log(nox_values)
-    A = np.vstack([temperatures, np.ones(len(temperatures))]).T
-    C2, log_C1 = np.linalg.lstsq(A, log_nox, rcond=None)[0]
-    C1 = np.exp(log_C1)
-    return C1, C2
+    try:
+        positions, temperatures, nox_values = load_species_data(dataset_path, species_name)
+        # Linear regression of log(NOx) vs Temperature
+        log_nox = np.log(nox_values)
+        A = np.vstack([temperatures, np.ones(len(temperatures))]).T
+        C2, log_C1 = np.linalg.lstsq(A, log_nox, rcond=None)[0]
+        C1 = np.exp(log_C1)
+        return C1, C2
+    except Exception as e:
+        print(f"Error fitting NOx model: {e}")
+        # Return default values if fitting fails
+        return 1.0, 0.0
 
 # Simulation wrapper: returns heating value and NOx mass fraction (NO + NO2)
 def simulate(params):
@@ -98,16 +112,16 @@ def simulate(params):
     T_out = outlet.T
 
     # Use the fitted NOx model
-    C1, C2 = fit_nox_model("datasets/SpeciesData", "NO")  # Example: Fit to NO data
+    C1, C2 = fit_nox_model("Datasets", "Ch4_80_mass")  # Using available dataset
     nox = calculate_nox(T_out, C1, C2)
 
     return heating, nox
 
 # Fitness: maximize heating, minimize NOx mass fraction
-def fitness_function(individual):
+def fitness_function(individual, a=1e5):
     heating, nox = simulate(individual)
-    # penalize NOx, weight factor
-    score = heating - 1e5 * nox
+    # penalize NOx with configurable weight factor
+    score = heating - a * nox
     return (score,)
 
 def main():

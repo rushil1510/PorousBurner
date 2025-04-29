@@ -1,0 +1,1 @@
+Timestamp | Method | a | Fitness Function | Parameters | Results
